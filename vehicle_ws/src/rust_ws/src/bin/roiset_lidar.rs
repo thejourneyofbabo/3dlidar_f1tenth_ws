@@ -5,6 +5,7 @@ use std::env;
 use std::sync::Arc;
 use std_msgs::msg::Header;
 
+/// Represents a 3D LiDAR point with all sensor data
 #[derive(Debug)]
 struct LidarPoint {
     x: f32,
@@ -16,11 +17,12 @@ struct LidarPoint {
     timestamp: f64,
 }
 
+/// Represents a filtered point that retains Z-axis information
 #[derive(Debug)]
-struct BevPoint {
+struct FilteredPoint {
     x: f32,
     y: f32,
-    z: f32, // Z축 추가
+    z: f32, // Z-axis retained for filtered data
     intensity: f32,
     tag: u8,
     line: u8,
@@ -28,37 +30,51 @@ struct BevPoint {
 }
 
 impl LidarPoint {
+    /// Parse a LiDAR point from byte array at given offset
     fn from_bytes(data: &[u8], offset: usize) -> Option<Self> {
         if offset + 26 > data.len() {
             return None;
         }
 
+        // Extract X coordinate (4 bytes, little-endian)
         let x = f32::from_le_bytes([
             data[offset],
             data[offset + 1],
             data[offset + 2],
             data[offset + 3],
         ]);
+
+        // Extract Y coordinate (4 bytes, little-endian)
         let y = f32::from_le_bytes([
             data[offset + 4],
             data[offset + 5],
             data[offset + 6],
             data[offset + 7],
         ]);
+
+        // Extract Z coordinate (4 bytes, little-endian)
         let z = f32::from_le_bytes([
             data[offset + 8],
             data[offset + 9],
             data[offset + 10],
             data[offset + 11],
         ]);
+
+        // Extract intensity (4 bytes, little-endian)
         let intensity = f32::from_le_bytes([
             data[offset + 12],
             data[offset + 13],
             data[offset + 14],
             data[offset + 15],
         ]);
+
+        // Extract tag (1 byte)
         let tag = data[offset + 16];
+
+        // Extract line (1 byte)
         let line = data[offset + 17];
+
+        // Extract timestamp (8 bytes, little-endian)
         let timestamp = f64::from_le_bytes([
             data[offset + 18],
             data[offset + 19],
@@ -81,12 +97,12 @@ impl LidarPoint {
         })
     }
 
-    fn to_bev(&self) -> BevPoint {
-        BevPoint {
+    /// Convert LiDAR point to filtered point
+    fn to_filtered(&self) -> FilteredPoint {
+        FilteredPoint {
             x: self.x,
             y: self.y,
-            //z: 0.0, // BEV에서는 Z=0
-            z: self.z, // Filted Z
+            z: self.z, // Retain filtered Z coordinate
             intensity: self.intensity,
             tag: self.tag,
             line: self.line,
@@ -95,33 +111,36 @@ impl LidarPoint {
     }
 }
 
-impl BevPoint {
+impl FilteredPoint {
+    /// Convert filtered point to byte array for PointCloud2 message
     fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(26); // Z축 포함하여 26바이트
+        let mut bytes = Vec::with_capacity(26); // 26 bytes including Z-axis
 
-        // X, Y, Z 좌표 (각각 4바이트)
+        // X, Y, Z coordinates (4 bytes each)
         bytes.extend_from_slice(&self.x.to_le_bytes());
         bytes.extend_from_slice(&self.y.to_le_bytes());
-        bytes.extend_from_slice(&self.z.to_le_bytes()); // Z축 추가
+        bytes.extend_from_slice(&self.z.to_le_bytes()); // Include Z-axis
 
-        // intensity (4바이트)
+        // Intensity (4 bytes)
         bytes.extend_from_slice(&self.intensity.to_le_bytes());
 
-        // tag, line (각각 1바이트)
+        // Tag and line (1 byte each)
         bytes.push(self.tag);
         bytes.push(self.line);
 
-        // timestamp (8바이트)
+        // Timestamp (8 bytes)
         bytes.extend_from_slice(&self.timestamp.to_le_bytes());
 
         bytes
     }
 }
 
+/// Parse PointCloud2 message into vector of LiDAR points
 fn parse_pointcloud2(msg: &PointCloud2) -> Vec<LidarPoint> {
     let mut points = Vec::with_capacity(msg.data.len() / msg.point_step as usize);
     let point_step = msg.point_step as usize;
 
+    // Process each point in the point cloud
     for i in (0..msg.data.len()).step_by(point_step) {
         if let Some(point) = LidarPoint::from_bytes(&msg.data, i) {
             points.push(point);
@@ -131,10 +150,14 @@ fn parse_pointcloud2(msg: &PointCloud2) -> Vec<LidarPoint> {
     points
 }
 
-fn create_bev_pointcloud2(points: Vec<BevPoint>, original_header: &Header) -> PointCloud2 {
+/// Create filtered PointCloud2 message from filtered points
+fn create_filtered_pointcloud2(
+    points: Vec<FilteredPoint>,
+    original_header: &Header,
+) -> PointCloud2 {
     use sensor_msgs::msg::PointField;
 
-    // BEV PointField 정의 (Z축 포함) - vec! 매크로 사용
+    // Define PointField structure for filtered data (including Z-axis)
     let fields = vec![
         PointField {
             name: "x".to_string(),
@@ -180,83 +203,84 @@ fn create_bev_pointcloud2(points: Vec<BevPoint>, original_header: &Header) -> Po
         },
     ];
 
-    // 모든 포인트의 바이트 데이터 생성
+    // Generate byte data for all points
     let mut data = Vec::with_capacity(points.len() * 26);
     for point in points.iter() {
         data.extend_from_slice(&point.to_bytes());
     }
 
-    // 새로운 헤더 생성 (frame_id를 BEV로 변경)
-    let mut bev_header = original_header.clone();
-    bev_header.frame_id = format!("{}_filted", original_header.frame_id);
+    // Create new header with filtered frame_id
+    let mut filtered_header = original_header.clone();
+    filtered_header.frame_id = format!("{}_filted", original_header.frame_id);
 
     PointCloud2 {
-        header: bev_header,
+        header: filtered_header,
         height: 1,
         width: points.len() as u32,
         fields,
         is_bigendian: false,
-        point_step: 26, // Z축 포함하여 26바이트
+        point_step: 26, // 26 bytes including Z-axis
         row_step: (points.len() * 26) as u32,
         data,
         is_dense: true,
     }
 }
 
-fn process_and_publish_bev(
+/// Process incoming point cloud and publish filtered version
+fn process_and_publish_filtered(
     msg: PointCloud2,
     publisher: &Arc<Publisher<PointCloud2>>,
 ) -> Result<(), Error> {
-    // 1. 원본 3D 포인트 파싱
+    // 1. Parse original 3D points
     let lidar_points = parse_pointcloud2(&msg);
     let original_count = lidar_points.len();
 
-    // 2. Z축 필터링 후 BEV 포인트로 변환
-    let bev_points: Vec<BevPoint> = lidar_points
+    // 2. Apply Z-axis filtering and convert to filtered points
+    let filtered_points: Vec<FilteredPoint> = lidar_points
         .into_iter()
-        .filter(|point| point.z >= -0.1 && point.z <= 0.0) // Z축 필터링
-        .map(|point| point.to_bev())
+        .filter(|point| point.z >= -0.1 && point.z <= 0.0) // Z-axis filtering
+        .map(|point| point.to_filtered())
         .collect();
 
-    println!("원본 포인트 수: {}", original_count);
-    println!("필터링 후 BEV 포인트 수: {}", bev_points.len());
+    println!("Original point count: {}", original_count);
+    println!("Filtered point count: {}", filtered_points.len());
 
-    // 3. 새로운 PointCloud2 메시지 생성
-    let bev_msg = create_bev_pointcloud2(bev_points, &msg.header);
+    // 3. Create new PointCloud2 message
+    let filtered_msg = create_filtered_pointcloud2(filtered_points, &msg.header);
 
-    // 4. BEV 토픽으로 발행
-    publisher.publish(bev_msg)?;
+    // 4. Publish to filtered topic
+    publisher.publish(filtered_msg)?;
 
-    println!("BEV 포인트 클라우드 발행 완료!");
+    println!("Filtered point cloud published successfully!");
 
     Ok(())
 }
 
 fn main() -> Result<(), Error> {
-    println!("LiDAR BEV Publisher Node");
+    println!("LiDAR Filtered Publisher Node");
     let context = Context::new(env::args())?;
-    let node = rclrs::create_node(&context, "lidar_bev_publisher")?;
+    let node = rclrs::create_node(&context, "lidar_filtered_publisher")?;
 
-    // BEV 포인트 클라우드 발행자 생성
-    let bev_publisher =
-        node.create_publisher::<PointCloud2>("/livox/lidar_bev", rclrs::QOS_PROFILE_DEFAULT)?;
-    let bev_publisher = Arc::new(bev_publisher);
+    // Create filtered point cloud publisher
+    let filtered_publisher =
+        node.create_publisher::<PointCloud2>("/livox/lidar_filted", rclrs::QOS_PROFILE_DEFAULT)?;
+    let filtered_publisher = Arc::new(filtered_publisher);
 
-    // 원본 LiDAR 구독자 생성
-    let publisher_clone = Arc::clone(&bev_publisher);
+    // Create original LiDAR subscriber
+    let publisher_clone = Arc::clone(&filtered_publisher);
     let _subscriber = node.create_subscription::<PointCloud2, _>(
         "/livox/lidar",
         rclrs::QOS_PROFILE_DEFAULT,
         move |msg: PointCloud2| {
-            if let Err(e) = process_and_publish_bev(msg, &publisher_clone) {
-                eprintln!("BEV 처리 중 오류: {}", e);
+            if let Err(e) = process_and_publish_filtered(msg, &publisher_clone) {
+                eprintln!("Error during filtering process: {}", e);
             }
         },
     )?;
 
-    println!("구독 토픽: /livox/lidar");
-    println!("발행 토픽: /livox/lidar_bev");
-    println!("BEV 변환 시작...");
+    println!("Subscribe topic: /livox/lidar");
+    println!("Publish topic: /livox/lidar_filted");
+    println!("Starting filtered conversion...");
 
     rclrs::spin(node).map_err(|err| err.into())
 }

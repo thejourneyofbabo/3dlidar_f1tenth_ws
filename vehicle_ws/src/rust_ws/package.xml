@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+
+<package format="3">
+  <name>rust_lidar</name>
+  <version>0.1.0</version>
+  <description>Rust Ros2 LiDAR</description>
+  <maintainer email="journeyofbabo@gmail.com">Jisang Yun</maintainer>
+  <license>Apache License 2.0</license>
+
+  <!-- Build tool dependency for using ament_cargo to build Rust packages -->
+  <buildtool_depend>ament_cargo</buildtool_depend>
+
+  <!-- Dependencies needed for Rust-ROS interaction and custom message support -->
+  <depend>rclrs</depend>
+  <depend>rosidl_runtime_rs</depend>
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <!--<depend>ackermann_msgs</depend>-->
+  <!--<depend>nav_msgs</depend>-->
+  <!--<depend>ackermann_msgs</depend>-->
+
+  <export>
+    <build_type>ament_cargo</build_type>
+  </export>
+</package>

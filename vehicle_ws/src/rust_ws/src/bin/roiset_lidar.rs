@@ -5,7 +5,7 @@ use std::env;
 use std::sync::Arc;
 
 /// Represents a 3D LiDAR point with all sensor data
-#[derive(Debug, Clone)]  // Added Clone for easier use
+#[derive(Debug, Clone)] // Added Clone for easier use
 struct LidarPoint {
     x: f32,
     y: f32,
@@ -123,10 +123,7 @@ fn parse_pointcloud2(msg: &PointCloud2) -> Vec<LidarPoint> {
 }
 
 /// Create filtered PointCloud2 message from filtered points
-fn create_filtered_pointcloud2(
-    points: Vec<LidarPoint>,
-    original_msg: &PointCloud2,
-) -> PointCloud2 {
+fn create_filtered_pointcloud2(points: Vec<LidarPoint>, original_msg: &PointCloud2) -> PointCloud2 {
     // Generate byte data for all points
     let mut data = Vec::with_capacity(points.len() * original_msg.point_step as usize);
     for point in points.iter() {
@@ -139,14 +136,14 @@ fn create_filtered_pointcloud2(
 
     PointCloud2 {
         header: filtered_header,
-        height: original_msg.height,  // Keep original height
-        width: points.len() as u32,   // Update width to filtered count
-        fields: original_msg.fields.clone(),  // Copy fields from original!
-        is_bigendian: original_msg.is_bigendian,  // Keep same endianness
-        point_step: original_msg.point_step,  // Same bytes per point
+        height: original_msg.height,             // Keep original height
+        width: points.len() as u32,              // Update width to filtered count
+        fields: original_msg.fields.clone(),     // Copy fields from original!
+        is_bigendian: original_msg.is_bigendian, // Keep same endianness
+        point_step: original_msg.point_step,     // Same bytes per point
         row_step: (points.len() as u32) * original_msg.point_step,
         data,
-        is_dense: true,  // We filtered out invalid points
+        is_dense: true, // We filtered out invalid points
     }
 }
 

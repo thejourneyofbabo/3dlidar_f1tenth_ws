@@ -6,23 +6,11 @@ use std::sync::Arc;
 use std_msgs::msg::Header;
 
 /// Represents a 3D LiDAR point with all sensor data
-#[derive(Debug)]
+#[derive(Debug, Clone)]  // Added Clone for easier use
 struct LidarPoint {
     x: f32,
     y: f32,
     z: f32,
-    intensity: f32,
-    tag: u8,
-    line: u8,
-    timestamp: f64,
-}
-
-/// Represents a filtered point that retains Z-axis information
-#[derive(Debug)]
-struct FilteredPoint {
-    x: f32,
-    y: f32,
-    z: f32, // Z-axis retained for filtered data
     intensity: f32,
     tag: u8,
     line: u8,
@@ -97,29 +85,14 @@ impl LidarPoint {
         })
     }
 
-    /// Convert LiDAR point to filtered point
-    fn to_filtered(&self) -> FilteredPoint {
-        FilteredPoint {
-            x: self.x,
-            y: self.y,
-            z: self.z, // Retain filtered Z coordinate
-            intensity: self.intensity,
-            tag: self.tag,
-            line: self.line,
-            timestamp: self.timestamp,
-        }
-    }
-}
-
-impl FilteredPoint {
-    /// Convert filtered point to byte array for PointCloud2 message
+    /// Convert point to byte array for PointCloud2 message
     fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(26); // 26 bytes including Z-axis
+        let mut bytes = Vec::with_capacity(26);
 
         // X, Y, Z coordinates (4 bytes each)
         bytes.extend_from_slice(&self.x.to_le_bytes());
         bytes.extend_from_slice(&self.y.to_le_bytes());
-        bytes.extend_from_slice(&self.z.to_le_bytes()); // Include Z-axis
+        bytes.extend_from_slice(&self.z.to_le_bytes());
 
         // Intensity (4 bytes)
         bytes.extend_from_slice(&self.intensity.to_le_bytes());
@@ -152,12 +125,12 @@ fn parse_pointcloud2(msg: &PointCloud2) -> Vec<LidarPoint> {
 
 /// Create filtered PointCloud2 message from filtered points
 fn create_filtered_pointcloud2(
-    points: Vec<FilteredPoint>,
+    points: Vec<LidarPoint>,
     original_header: &Header,
 ) -> PointCloud2 {
     use sensor_msgs::msg::PointField;
 
-    // Define PointField structure for filtered data (including Z-axis)
+    // Define PointField structure for filtered data
     let fields = vec![
         PointField {
             name: "x".to_string(),
@@ -219,7 +192,7 @@ fn create_filtered_pointcloud2(
         width: points.len() as u32,
         fields,
         is_bigendian: false,
-        point_step: 26, // 26 bytes including Z-axis
+        point_step: 26,
         row_step: (points.len() * 26) as u32,
         data,
         is_dense: true,
@@ -235,11 +208,10 @@ fn process_and_publish_filtered(
     let lidar_points = parse_pointcloud2(&msg);
     let original_count = lidar_points.len();
 
-    // 2. Apply Z-axis filtering and convert to filtered points
-    let filtered_points: Vec<FilteredPoint> = lidar_points
+    // 2. Apply Z-axis filtering - no need to convert structs!
+    let filtered_points: Vec<LidarPoint> = lidar_points
         .into_iter()
         .filter(|point| point.z >= -0.1 && point.z <= 0.0) // Z-axis filtering
-        .map(|point| point.to_filtered())
         .collect();
 
     println!("Original point count: {}", original_count);

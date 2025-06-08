@@ -23,64 +23,23 @@ impl LidarPoint {
             return None;
         }
 
-        // Extract X coordinate (4 bytes, little-endian)
-        let x = f32::from_le_bytes([
-            data[offset],
-            data[offset + 1],
-            data[offset + 2],
-            data[offset + 3],
-        ]);
+        // Helper to extract bytes at position
+        let get_f32 = |pos: usize| {
+            f32::from_le_bytes(data[offset + pos..offset + pos + 4].try_into().unwrap())
+        };
 
-        // Extract Y coordinate (4 bytes, little-endian)
-        let y = f32::from_le_bytes([
-            data[offset + 4],
-            data[offset + 5],
-            data[offset + 6],
-            data[offset + 7],
-        ]);
-
-        // Extract Z coordinate (4 bytes, little-endian)
-        let z = f32::from_le_bytes([
-            data[offset + 8],
-            data[offset + 9],
-            data[offset + 10],
-            data[offset + 11],
-        ]);
-
-        // Extract intensity (4 bytes, little-endian)
-        let intensity = f32::from_le_bytes([
-            data[offset + 12],
-            data[offset + 13],
-            data[offset + 14],
-            data[offset + 15],
-        ]);
-
-        // Extract tag (1 byte)
-        let tag = data[offset + 16];
-
-        // Extract line (1 byte)
-        let line = data[offset + 17];
-
-        // Extract timestamp (8 bytes, little-endian)
-        let timestamp = f64::from_le_bytes([
-            data[offset + 18],
-            data[offset + 19],
-            data[offset + 20],
-            data[offset + 21],
-            data[offset + 22],
-            data[offset + 23],
-            data[offset + 24],
-            data[offset + 25],
-        ]);
+        let get_f64 = |pos: usize| {
+            f64::from_le_bytes(data[offset + pos..offset + pos + 8].try_into().unwrap())
+        };
 
         Some(LidarPoint {
-            x,
-            y,
-            z,
-            intensity,
-            tag,
-            line,
-            timestamp,
+            x: get_f32(0),           // Bytes 0-3
+            y: get_f32(4),           // Bytes 4-7
+            z: get_f32(8),           // Bytes 8-11
+            intensity: get_f32(12),  // Bytes 12-15
+            tag: data[offset + 16],  // Byte 16
+            line: data[offset + 17], // Byte 17
+            timestamp: get_f64(18),  // Bytes 18-25
         })
     }
 

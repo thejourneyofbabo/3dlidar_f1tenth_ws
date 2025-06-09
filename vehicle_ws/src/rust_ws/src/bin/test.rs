@@ -176,6 +176,27 @@ impl LidarFilteredPublisher {
 
         Ok(())
     }
+
+    // NEW: Example methods that use the stored publisher
+
+    /// Publish a test empty point cloud
+    pub fn publish_test_empty(&self) -> Result<(), Error> {
+        let empty_msg = PointCloud2 {
+            header: std_msgs::msg::Header::default(),
+            height: 1,
+            width: 0,
+            fields: Vec::new(),
+            is_bigendian: false,
+            point_step: 26,
+            row_step: 0,
+            data: Vec::new(),
+            is_dense: true,
+        };
+
+        self._filtered_publisher.publish(empty_msg)?;
+        println!("Test empty point cloud published!");
+        Ok(())
+    }
 }
 
 fn main() -> Result<(), Error> {
@@ -184,7 +205,13 @@ fn main() -> Result<(), Error> {
     let node = rclrs::create_node(&context, "lidar_filtered_publisher")?;
 
     // Create the filtering node instance
-    let _lidar_filtered_publisher = LidarFilteredPublisher::new(&node)?;
+    let lidar_filtered_publisher = LidarFilteredPublisher::new(&node)?;
+
+    // NEW: Example of using the stored publisher in main()
+    println!("Publishing test empty point cloud...");
+    lidar_filtered_publisher.publish_test_empty()?;
+
+    println!("Test publishing completed. Starting automatic filtering...");
 
     // Keep the node spinning
     while context.ok() {

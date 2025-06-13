@@ -1,8 +1,6 @@
 use anyhow::{Error, Result};
-use rclrs::{self, Context, Node, Publisher, Subscription};
+use rclrs::*;
 use sensor_msgs::msg::PointCloud2;
-use std::env;
-use std::sync::Arc;
 
 /// Represents a 3D LiDAR point with all sensor data
 #[derive(Debug, Clone)]
@@ -69,31 +67,30 @@ impl LidarPoint {
 /// LiDAR filtering node structure
 struct LidarFilteredPublisher {
     // Keep subscription alive to prevent it from being dropped
-    _scan_subscription: Arc<Subscription<PointCloud2>>,
+    _scan_subscription: Subscription<PointCloud2>,
     // Store publisher for future use and better control
-    _filtered_publisher: Arc<Publisher<PointCloud2>>,
+    _filtered_publisher: Publisher<PointCloud2>,
 }
 
 impl LidarFilteredPublisher {
     /// Create new LiDAR filtered publisher node
-    fn new(node: &Arc<Node>) -> Result<Self> {
-        // Create filtered point cloud publisher (already returns Arc<Publisher<T>>)
-        let filtered_publisher = node
-            .create_publisher::<PointCloud2>("/livox/lidar_filted", rclrs::QOS_PROFILE_DEFAULT)?;
+    fn new(executor: &Executor) -> Result<Self, RclrsError> {
+        // Create node
+        let node = executor.create_node("lidar_filtered_publisher")?;
+
+        // Create filtered point cloud publisher
+        let filtered_publisher = node.create_publisher::<PointCloud2>("/livox/lidar_filted")?;
 
         // Clone publisher for callback use
         let publisher_clone = filtered_publisher.clone();
 
         // Create original LiDAR subscriber with callback
-        let scan_subscription = node.create_subscription::<PointCloud2, _>(
-            "/livox/lidar",
-            rclrs::QOS_PROFILE_DEFAULT,
-            move |msg: PointCloud2| {
+        let scan_subscription =
+            node.create_subscription::<PointCloud2, _>("/livox/lidar", move |msg: PointCloud2| {
                 if let Err(e) = Self::process_and_publish_filtered(msg, &publisher_clone) {
                     eprintln!("Error during filtering process: {}", e);
                 }
-            },
-        )?;
+            })?;
 
         println!("Subscribe topic: /livox/lidar");
         println!("Publish topic: /livox/lidar_filted");
@@ -101,7 +98,7 @@ impl LidarFilteredPublisher {
 
         Ok(Self {
             _scan_subscription: scan_subscription,
-            _filtered_publisher: filtered_publisher, // Store the original publisher for future use
+            _filtered_publisher: filtered_publisher,
         })
     }
 
@@ -151,7 +148,7 @@ impl LidarFilteredPublisher {
     /// Process incoming point cloud and publish filtered version
     fn process_and_publish_filtered(
         msg: PointCloud2,
-        publisher: &Arc<Publisher<PointCloud2>>,
+        publisher: &Publisher<PointCloud2>,
     ) -> Result<(), Error> {
         // 1. Parse original 3D points
         let lidar_points = Self::parse_pointcloud2(&msg);
@@ -178,18 +175,15 @@ impl LidarFilteredPublisher {
     }
 }
 
-fn main() -> Result<(), Error> {
+fn main() -> Result<(), RclrsError> {
     println!("Starting LiDAR Filtered Publisher Node");
-    let context = Context::new(env::args())?;
-    let node = rclrs::create_node(&context, "lidar_filtered_publisher")?;
+
+    // Use the new executor pattern
+    let mut executor = Context::default_from_env()?.create_basic_executor();
 
     // Create the filtering node instance
-    let _lidar_filtered_publisher = LidarFilteredPublisher::new(&node)?;
+    let _lidar_filtered_publisher = LidarFilteredPublisher::new(&executor)?;
 
-    // Keep the node spinning
-    while context.ok() {
-        let _ = rclrs::spin_once(node.clone(), None);
-    }
-
-    Ok(())
+    // Spin the executor
+    executor.spin(SpinOptions::default()).first_error()
 }

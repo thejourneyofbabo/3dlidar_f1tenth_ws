@@ -12,3 +12,4 @@ tokio = { version = "1.42.0", features = ["full"] }
 ## msgs
 sensor_msgs = "*"
 std_msgs = "*"
+ackermann_msgs = "*" 

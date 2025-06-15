@@ -37,16 +37,22 @@ impl ReactiveFollowGap {
 
         const MAX_LIDAR_RANGE: f32 = 3.0;
 
-        let filtered_points: Vec<f32> = msg.ranges
+        let filtered_points: Vec<f32> = msg
+            .ranges
             .iter()
-            .map(|&range| if range <= MAX_LIDAR_RANGE { range } else { MAX_LIDAR_RANGE})
+            .map(|&range| {
+                if range <= MAX_LIDAR_RANGE {
+                    range
+                } else {
+                    MAX_LIDAR_RANGE
+                }
+            })
             .collect();
 
         let mut processed_scan = msg.clone();
         processed_scan.ranges = filtered_points;
 
         vec![processed_scan]
-
     }
 
     fn find_max_gap() {
@@ -59,7 +65,7 @@ impl ReactiveFollowGap {
         // Naive: Choose the furthest point within ranges and go there
     }
 
-    fn lidar_callback(msg) -> Result<(), Error> {
+    fn lidar_callback(msg: LaserScan) -> Result<(), Error> {
         // Process each LiDAR scan as per the Follow Gap algorithm & publish an AckermannDriveStamped Message
         let lidar_points = Self::process_lidar(&msg);
 

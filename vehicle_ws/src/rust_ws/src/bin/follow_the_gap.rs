@@ -2,7 +2,7 @@ use ackermann_msgs::msg::AckermannDriveStamped;
 use anyhow::{Error, Result};
 use rclrs::*;
 use sensor_msgs::msg::LaserScan;
-use std::f32::consts::PI;
+use std::{f32::consts::PI, usize};
 
 struct ReactiveFollowGap {
     scan_subscription: Subscription<LaserScan>,
@@ -55,8 +55,22 @@ impl ReactiveFollowGap {
         vec![processed_scan]
     }
 
-    fn find_max_gap() {
+    fn find_max_gap(msg: &LaserScan) -> (usize, usize) {
         // Return the start index & end index of the max gap in free_space_ranges
+        let mut roi_angle_deg = 67.0; // degree
+        let mut roi_angle_rad = roi_angle_deg * PI / 180.0;
+        let roi_angle_steps = (roi_angle_rad / msg.angle_increment) as usize; // ROI angle steps
+                                                                              // for left & right
+        let mid_lidar_idx = ((msg.angle_max - msg.angle_min) / msg.angle_increment) as usize;
+
+        let (start_idx, end_idx) = (
+            mid_lidar_idx - roi_angle_steps,
+            mid_lidar_idx + roi_angle_steps,
+        );
+
+        let mut points = Vec::with_capacity(end_idx - start_idx + 1);
+
+        for i in start_idx..=end_idx {}
     }
 
     fn find_best_point() {
@@ -71,6 +85,7 @@ impl ReactiveFollowGap {
 
         // Todo
         // Find closest point to LiDAR
+        let (max_gap_start, max_gap_end) = Self::find_max_gap(&lidar_points);
 
         // Eliminate all points inside 'bubble' (set them to zero)
 

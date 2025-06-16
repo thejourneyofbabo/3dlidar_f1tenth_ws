@@ -17,6 +17,8 @@ impl ReactiveFollowGap {
     fn new(executor: &Executor) -> Result<Self, RclrsError> {
         let node = executor.create_node("follow_the_gap_node")?;
 
+        println!("Node created successfully");
+
         let drive_publisher = node.create_publisher::<AckermannDriveStamped>("/drive")?;
         let publisher_clone = drive_publisher.clone();
 
@@ -30,6 +32,9 @@ impl ReactiveFollowGap {
                 }
             })?;
 
+        println!("Subscription to /scan created");
+        println!("Publisher to /drive created");
+
         Ok(Self {
             scan_subscription,
             drive_publisher,
@@ -38,9 +43,6 @@ impl ReactiveFollowGap {
     }
 
     fn process_lidar(msg: &LaserScan) -> Vec<f32> {
-        // Preprocess the LiDAR scan array. Expert implementation includes:
-        // 1.Setting each value to the mean over some window
-        // 2.Rejecting high values (eg. > 3m)
         let max_range: f32 = 3.0;
         let min_range: f32 = 0.3;
         let vehicle_width: f32 = 0.4;
@@ -48,12 +50,6 @@ impl ReactiveFollowGap {
         let mut ranges = msg.ranges.clone();
         let mut min_dist = max_range;
         let mut min_idx = 0;
-
-        //let ranges: Vec<f32> = msg
-        //    .ranges
-        //    .iter()
-        //    .map(|&range| if range <= max_range { range } else { max_range })
-        //    .collect();
 
         for (i, range) in ranges.iter_mut().enumerate() {
             if *range > max_range || range.is_nan() || range.is_infinite() {
@@ -72,7 +68,7 @@ impl ReactiveFollowGap {
             let end_idx = std::cmp::min(min_idx + bubble_size, ranges.len() - 1);
 
             for i in start_idx..=end_idx {
-                ranges[i] = 0.0
+                ranges[i] = 0.0;
             }
         }
 
@@ -81,19 +77,16 @@ impl ReactiveFollowGap {
 
     fn find_max_gap(msg: &LaserScan, ranges: &[f32]) -> (usize, usize) {
         // Set Region of Interest(ROI)
-        let roi_angle_deg = 67.0; // degree
+        let roi_angle_deg = 67.0;
         let roi_angle_rad = roi_angle_deg * PI / 180.0;
-        let roi_angle_steps = (roi_angle_rad / msg.angle_increment) as usize; // ROI angle steps
-                                                                              // for left & right
+        let roi_angle_steps = (roi_angle_rad / msg.angle_increment) as usize;
+
+        // Fix the bounds checking here
         let mid_lidar_idx = ranges.len() / 2;
-        //let (roi_idx_start, roi_idx_end) = (
-        //    mid_lidar_idx - roi_angle_steps,
-        //    mid_lidar_idx + roi_angle_steps,
-        //);
         let roi_idx_start = mid_lidar_idx.saturating_sub(roi_angle_steps);
         let roi_idx_end = (mid_lidar_idx + roi_angle_steps).min(ranges.len() - 1);
 
-        // Return the start index & end index of the max gap in free_space_ranges
+        // Find the largest gap
         let min_range = 0.5;
         let mut max_gap_size = 0;
         let mut max_gap_start = roi_idx_start;
@@ -103,14 +96,11 @@ impl ReactiveFollowGap {
 
         for i in roi_idx_start..=roi_idx_end {
             let is_free = ranges[i] > min_range;
-            //let was_free = i > roi_idx_start && ranges[i - 1] > min_range;
 
-            // Gap begin
             if is_free && !in_gap {
                 gap_start = i;
                 in_gap = true;
             } else if !is_free && in_gap {
-                // End of current gap
                 let gap_size = i - gap_start;
                 if gap_size > max_gap_size {
                     max_gap_size = gap_size;
@@ -131,7 +121,7 @@ impl ReactiveFollowGap {
         }
 
         if max_gap_size == 0 {
-            println!("Warngin!: No gap found!!");
+            println!("Warning: No gap found! Using center of ROI");
             max_gap_start = (roi_idx_start + roi_idx_end) / 2;
             max_gap_end = max_gap_start;
         }
@@ -145,12 +135,9 @@ impl ReactiveFollowGap {
         gap_end: usize,
         previous_best: &Arc<Mutex<Option<usize>>>,
     ) -> usize {
-        // Start_i & end_i are start and end indicies of max-gap range, respectively
-        // Return index of best point in ranges
-        // Naive: Choose the furthest point within ranges and go there
         let mut best_point = (gap_start + gap_end) / 2;
         let mut max_dist = 0.0;
-        let alpha = 0.8;
+        let alpha = 0.3; // Fixed alpha value
 
         for i in gap_start..=gap_end {
             if ranges[i] > max_dist {
@@ -175,10 +162,10 @@ impl ReactiveFollowGap {
     }
 
     fn vehicle_control(msg: &LaserScan, best_point: usize) -> (f32, f32) {
-        // Calculate Steering-Angle & Speed
         let vehicle_center_idx = msg.ranges.len() / 2;
         let steer_ang_rad: f32 =
             (best_point as f32 - vehicle_center_idx as f32) * msg.angle_increment;
+
         let steer_ang_rad = steer_ang_rad.clamp(-0.4, 0.4);
         let steer_ang_deg = steer_ang_rad.abs() * 180.0 / PI;
 
@@ -197,24 +184,14 @@ impl ReactiveFollowGap {
         drive_publisher: &Publisher<AckermannDriveStamped>,
         previous_best_point: &Arc<Mutex<Option<usize>>>,
     ) -> Result<(), Error> {
-        // Process each LiDAR scan as per the Follow Gap algorithm & publish an AckermannDriveStamped Message
         let processed_ranges = Self::process_lidar(&msg);
-
-        // Todo
-        // Find closest point to LiDAR
         let (max_gap_start, max_gap_end) = Self::find_max_gap(&msg, &processed_ranges);
-
-        // Eliminate all points inside 'bubble' (set them to zero)
-        // Find max length gap
-
-        // Find the best point in the gap
         let best_point_idx = Self::find_best_point(
             &processed_ranges,
             max_gap_start,
             max_gap_end,
             previous_best_point,
         );
-
         let (steering_angle, drive_speed) = Self::vehicle_control(&msg, best_point_idx);
 
         let mut drive_msg = AckermannDriveStamped::default();
@@ -223,16 +200,19 @@ impl ReactiveFollowGap {
 
         drive_publisher.publish(&drive_msg)?;
 
-        // Publish Drive message
         Ok(())
     }
 }
 
 fn main() -> Result<(), RclrsError> {
-    println!("F1Tenth Gap Follow Node with Rust");
+    println!("=== F1Tenth Gap Follow Node with Rust ===");
+    println!("Starting up...");
 
     let mut executor = Context::default_from_env()?.create_basic_executor();
     let _node = ReactiveFollowGap::new(&executor)?;
-    //ReactiveFollowGap::new(&executor)?;
+
+    println!("Node initialized, starting executor spin...");
+    println!("Waiting for /scan messages...");
+
     executor.spin(SpinOptions::default()).first_error()
 }

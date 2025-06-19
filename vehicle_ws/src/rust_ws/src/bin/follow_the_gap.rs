@@ -140,12 +140,12 @@ impl ReactiveFollowGap {
             max_gap_end = max_gap_start;
         }
 
-        let mid_point = ranges.len() / 2;
-        println!(
-            "max_gap_left:{}\nmax_gap_right:{}",
-            mid_point - max_gap_start,
-            max_gap_end - mid_point
-        );
+        //let mid_point = ranges.len() / 2;
+        //println!(
+        //    "max_gap_left:{}\nmax_gap_right:{}",
+        //    mid_point - max_gap_start,
+        //    max_gap_end - mid_point
+        //);
 
         (max_gap_start, max_gap_end)
     }
@@ -159,33 +159,36 @@ impl ReactiveFollowGap {
         // Start_i & end_i are start and end indicies of max-gap range, respectively
         // Return index of best point in ranges
         // Naive: Choose the furthest point within ranges and go there
-        let mut best_point = (gap_start + gap_end) / 2;
-        //let mut best_point = ranges.len() / 2;
-        let mut max_dist = 0.0;
         let alpha = 0.7;
-        //println!("Middle idx = {}", best_point);
+        let mut weighted_sum = 0.0;
+        let mut weight_total = 0.0;
 
-        //for i in gap_start..=gap_end {
-        //    if ranges[i] > max_dist {
-        //        max_dist = ranges[i];
-        //        best_point = i;
-        //    }
-        //}
+        for i in gap_start..=gap_end {
+            let weight = ranges[i];
+            weighted_sum += i as f32 * weight;
+            weight_total += weight;
+        }
 
-        //println!("best_point_before ema: {}", best_point);
+        let best_point = if weight_total > 0.0 {
+            (weighted_sum / weight_total) as usize
+        } else {
+            (gap_start + gap_end) / 2
+        };
 
         // EMA Filter
         let ema_best = {
             let mut prev_lock = previous_best.lock().unwrap();
-            let ema_result = if let Some(prev) = *prev_lock {
-                (alpha * best_point as f32 + (1.0 - alpha) * prev as f32) as usize
-            } else {
-                best_point
+            let ema_result = match *prev_lock {
+                Some(prev) => {
+                    (alpha * (best_point as f32) + (1.0 - alpha) * (prev as f32)).round() as usize
+                }
+                None => best_point,
             };
+
             *prev_lock = Some(ema_result);
             ema_result
         };
-        //println!("Best Point = {}", ema_best);
+        println!("Best Point = {}", ema_best);
 
         ema_best
     }

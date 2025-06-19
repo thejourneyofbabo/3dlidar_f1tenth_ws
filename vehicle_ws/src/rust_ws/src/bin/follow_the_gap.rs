@@ -41,7 +41,7 @@ impl ReactiveFollowGap {
         // Preprocess the LiDAR scan array. Expert implementation includes:
         // 1.Setting each value to the mean over some window
         // 2.Rejecting high values (eg. > 3m)
-        let max_range: f32 = 3.0;
+        let max_range: f32 = 5.0;
         let min_range: f32 = 0.3;
         let vehicle_width: f32 = 0.4;
 
@@ -92,9 +92,13 @@ impl ReactiveFollowGap {
         //);
         let roi_idx_start = mid_lidar_idx.saturating_sub(roi_angle_steps);
         let roi_idx_end = (mid_lidar_idx + roi_angle_steps).min(ranges.len() - 1);
+        //println!(
+        //    "roi_idx_start: {}\nroi_idx_end:{}",
+        //    roi_idx_start, roi_idx_end
+        //);
 
         // Return the start index & end index of the max gap in free_space_ranges
-        let min_range = 0.5;
+        let min_range = 1.5;
         let mut max_gap_size = 0;
         let mut max_gap_start = roi_idx_start;
         let mut max_gap_end = roi_idx_start;
@@ -136,6 +140,13 @@ impl ReactiveFollowGap {
             max_gap_end = max_gap_start;
         }
 
+        let mid_point = ranges.len() / 2;
+        println!(
+            "max_gap_left:{}\nmax_gap_right:{}",
+            mid_point - max_gap_start,
+            max_gap_end - mid_point
+        );
+
         (max_gap_start, max_gap_end)
     }
 
@@ -149,15 +160,19 @@ impl ReactiveFollowGap {
         // Return index of best point in ranges
         // Naive: Choose the furthest point within ranges and go there
         let mut best_point = (gap_start + gap_end) / 2;
+        //let mut best_point = ranges.len() / 2;
         let mut max_dist = 0.0;
-        let alpha = 0.8;
+        let alpha = 0.7;
+        //println!("Middle idx = {}", best_point);
 
-        for i in gap_start..=gap_end {
-            if ranges[i] > max_dist {
-                max_dist = ranges[i];
-                best_point = i;
-            }
-        }
+        //for i in gap_start..=gap_end {
+        //    if ranges[i] > max_dist {
+        //        max_dist = ranges[i];
+        //        best_point = i;
+        //    }
+        //}
+
+        //println!("best_point_before ema: {}", best_point);
 
         // EMA Filter
         let ema_best = {
@@ -170,6 +185,7 @@ impl ReactiveFollowGap {
             *prev_lock = Some(ema_result);
             ema_result
         };
+        //println!("Best Point = {}", ema_best);
 
         ema_best
     }
@@ -182,9 +198,18 @@ impl ReactiveFollowGap {
         let steer_ang_rad = steer_ang_rad.clamp(-0.4, 0.4);
         let steer_ang_deg = steer_ang_rad.abs() * 180.0 / PI;
 
+        // Normal Speed
+        //let drive_speed = match steer_ang_deg {
+        //    n if n < 5.0 => 2.0,
+        //    n if n < 10.0 => 1.5,
+        //    n if n < 15.0 => 1.2,
+        //    _ => 0.8,
+        //};
+
+        // Fast Speed
         let drive_speed = match steer_ang_deg {
-            n if n < 5.0 => 2.0,
-            n if n < 10.0 => 1.5,
+            n if n < 5.0 => 4.0,
+            n if n < 10.0 => 2.5,
             n if n < 15.0 => 1.2,
             _ => 0.8,
         };
@@ -220,6 +245,7 @@ impl ReactiveFollowGap {
         let mut drive_msg = AckermannDriveStamped::default();
         drive_msg.drive.steering_angle = steering_angle;
         drive_msg.drive.speed = drive_speed;
+        //drive_msg.drive.speed = 0.0;
 
         drive_publisher.publish(&drive_msg)?;
 

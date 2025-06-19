@@ -7,6 +7,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+#[allow(dead_code)]
 struct ReactiveFollowGap {
     scan_subscription: Subscription<LaserScan>,
     drive_publisher: Publisher<AckermannDriveStamped>,
@@ -86,16 +87,8 @@ impl ReactiveFollowGap {
         let roi_angle_steps = (roi_angle_rad / msg.angle_increment) as usize; // ROI angle steps
                                                                               // for left & right
         let mid_lidar_idx = ranges.len() / 2;
-        //let (roi_idx_start, roi_idx_end) = (
-        //    mid_lidar_idx - roi_angle_steps,
-        //    mid_lidar_idx + roi_angle_steps,
-        //);
         let roi_idx_start = mid_lidar_idx.saturating_sub(roi_angle_steps);
         let roi_idx_end = (mid_lidar_idx + roi_angle_steps).min(ranges.len() - 1);
-        //println!(
-        //    "roi_idx_start: {}\nroi_idx_end:{}",
-        //    roi_idx_start, roi_idx_end
-        //);
 
         // Return the start index & end index of the max gap in free_space_ranges
         let min_range = 1.5;
@@ -139,13 +132,6 @@ impl ReactiveFollowGap {
             max_gap_start = (roi_idx_start + roi_idx_end) / 2;
             max_gap_end = max_gap_start;
         }
-
-        //let mid_point = ranges.len() / 2;
-        //println!(
-        //    "max_gap_left:{}\nmax_gap_right:{}",
-        //    mid_point - max_gap_start,
-        //    max_gap_end - mid_point
-        //);
 
         (max_gap_start, max_gap_end)
     }

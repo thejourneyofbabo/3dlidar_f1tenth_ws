@@ -145,7 +145,7 @@ impl ReactiveFollowGap {
         // Start_i & end_i are start and end indicies of max-gap range, respectively
         // Return index of best point in ranges
         // Naive: Choose the furthest point within ranges and go there
-        let alpha = 0.7;
+        let alpha = 0.6;
         let mut weighted_sum = 0.0;
         let mut weight_total = 0.0;
 
@@ -174,9 +174,23 @@ impl ReactiveFollowGap {
             *prev_lock = Some(ema_result);
             ema_result
         };
-        println!("Best Point = {}", ema_best);
+        //println!("Best Point = {}", ema_best);
 
         ema_best
+    }
+
+    fn pure_pursuit(steer_ang_rad: &f32, lookahead_dist: f32) -> f32 {
+        //let lookahead_dist = 1.0;
+        let lidar_to_rear = 0.27;
+        let wheel_base = 0.32;
+        let bestpoint_x = lookahead_dist * f32::cos(*steer_ang_rad);
+        let bestpoint_y = lookahead_dist * f32::sin(*steer_ang_rad);
+
+        let lookahead_angle = f32::atan2(bestpoint_y, bestpoint_x + lidar_to_rear);
+        let lookahead_rear = f32::sqrt((bestpoint_x + lidar_to_rear).powi(2) + bestpoint_y.powi(2));
+
+        // Final Pure Pursuit Angle
+        f32::atan2(2.0 * wheel_base * lookahead_angle.sin(), lookahead_rear)
     }
 
     fn vehicle_control(msg: &LaserScan, best_point: usize) -> (f32, f32) {
@@ -184,8 +198,22 @@ impl ReactiveFollowGap {
         let vehicle_center_idx = msg.ranges.len() / 2;
         let steer_ang_rad: f32 =
             (best_point as f32 - vehicle_center_idx as f32) * msg.angle_increment;
-        let steer_ang_rad = steer_ang_rad.clamp(-0.4, 0.4);
+        //let steer_ang_rad = steer_ang_rad.clamp(-0.4, 0.4);
+
+        //println!("Steering_angle_radian: {}", steer_ang_rad);
+
+        let best_lookahead = msg.ranges[best_point].min(3.0);
         let steer_ang_deg = steer_ang_rad.abs() * 180.0 / PI;
+
+        let adaptive_lookahead = match steer_ang_deg {
+            n if n < 5.0 => best_lookahead * 1.0,
+            n if n < 15.0 => best_lookahead * 0.7,
+            n if n < 30.0 => best_lookahead * 0.5,
+            _ => best_lookahead * 0.3,
+        };
+
+        let pure_pursuit_steer = Self::pure_pursuit(&steer_ang_rad, adaptive_lookahead);
+        let steer_ang_deg = pure_pursuit_steer.abs() * 180.0 / PI;
 
         // Normal Speed
         //let drive_speed = match steer_ang_deg {
@@ -203,7 +231,12 @@ impl ReactiveFollowGap {
             _ => 0.8,
         };
 
-        (steer_ang_rad, drive_speed)
+        println!(
+            "Final Steer: {}\nDriving Speed: {}",
+            steer_ang_deg, drive_speed
+        );
+
+        (pure_pursuit_steer, drive_speed)
     }
 
     fn lidar_callback(

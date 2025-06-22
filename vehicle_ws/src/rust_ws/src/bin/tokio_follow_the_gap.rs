@@ -12,12 +12,32 @@ const MIN_RANGE: f32 = 0.3;
 const VEHICLE_WIDTH: f32 = 0.4;
 const ROI_ANGLE_DEG: f32 = 67.0;
 const ROI_ANGLE_RAD: f32 = ROI_ANGLE_DEG * PI / 180.0;
-const MIN_GAP_RANGE: f32 = 1.5;
-const EMA_ALPHA: f32 = 0.8;
+const MIN_GAP_RANGE: f32 = 1.8;
+const EMA_ALPHA: f32 = 0.7;
 
 // Vehicle constants
 const LIDAR_TO_REAR: f32 = 0.27;
 const WHEEL_BASE: f32 = 0.32;
+
+// Speed lookup table
+//const SPEED_TABLE: [(f32, f32); 4] = [(5.0, 4.0), (10.0, 2.5), (15.0, 1.2), (f32::MAX, 0.8)];
+const SPEED_TABLE: [(f32, f32); 6] = [
+    (3.0, 4.5),
+    (5.0, 4.0),
+    (7.5, 3.0),
+    (10.0, 2.5),
+    (15.0, 1.2),
+    (f32::MAX, 0.8),
+];
+
+// Lookahead multipliers - reduced for tighter cornering
+const LOOKAHEAD_TABLE: [(f32, f32); 5] = [
+    (3.0, 1.0),
+    (5.0, 0.8),      // was 1.0
+    (15.0, 0.5),     // was 0.7
+    (30.0, 0.3),     // was 0.5
+    (f32::MAX, 0.2), // was 0.3
+];
 
 #[allow(dead_code)]
 struct ReactiveFollowGap {
@@ -238,31 +258,22 @@ impl ReactiveFollowGap {
         let best_lookahead = msg.ranges[best_point].min(3.0);
         let steer_ang_deg = steer_ang_rad.abs() * 180.0 / PI;
 
-        let adaptive_lookahead = match steer_ang_deg {
-            n if n < 5.0 => best_lookahead * 1.0,
-            n if n < 15.0 => best_lookahead * 0.7,
-            n if n < 30.0 => best_lookahead * 0.5,
-            _ => best_lookahead * 0.3,
-        };
+        // Use lookup table for adaptive lookahead
+        let adaptive_lookahead = LOOKAHEAD_TABLE
+            .iter()
+            .find(|(angle, _)| steer_ang_deg < *angle)
+            .map(|(_, mult)| best_lookahead * mult)
+            .unwrap_or(best_lookahead * 0.3);
 
         let pure_pursuit_steer = Self::pure_pursuit(steer_ang_rad, adaptive_lookahead);
         let steer_ang_deg = pure_pursuit_steer.abs() * 180.0 / PI;
 
-        // Normal Speed
-        //let drive_speed = match steer_ang_deg {
-        //    n if n < 5.0 => 2.0,
-        //    n if n < 10.0 => 1.5,
-        //    n if n < 15.0 => 1.2,
-        //    _ => 0.8,
-        //};
-
-        // Fast Speed
-        let drive_speed = match steer_ang_deg {
-            n if n < 5.0 => 4.0,
-            n if n < 10.0 => 2.5,
-            n if n < 15.0 => 1.2,
-            _ => 0.8,
-        };
+        // Use lookup table for speed
+        let drive_speed = SPEED_TABLE
+            .iter()
+            .find(|(angle, _)| steer_ang_deg < *angle)
+            .map(|(_, speed)| *speed)
+            .unwrap_or(0.8);
 
         println!(
             "Final Steer: {:.2}°, Driving Speed: {:.2} m/s",

@@ -12,9 +12,9 @@ const MAX_RANGE_CLIP: f32 = 5.0;
 const MIN_RANGE_BUBBLE_TRIGGER: f32 = 0.8;
 const VEHICLE_WIDTH: f32 = 0.5;
 const ROI_ANGLE_DEG: f32 = 67.0;
-const EMA_ALPHA: f32 = 0.6;
+const EMA_ALPHA: f32 = 0.7;
 const SMOOTHING_WINDOW_SIZE: usize = 9;
-const MAX_SPEED: f32 = 4.5;
+const MAX_SPEED: f32 = 1.5;
 
 #[allow(dead_code)]
 pub struct ReactiveFollowGap {

@@ -12,10 +12,8 @@ const MAX_RANGE_CLIP: f32 = 5.0;
 const MIN_RANGE_BUBBLE_TRIGGER: f32 = 0.8;
 const VEHICLE_WIDTH: f32 = 0.5;
 const ROI_ANGLE_DEG: f32 = 67.0;
-const EMA_ALPHA: f32 = 0.8;
+const EMA_ALPHA: f32 = 0.6;
 const SMOOTHING_WINDOW_SIZE: usize = 9;
-const LIDAR_TO_REAR: f32 = 0.27;
-const WHEEL_BASE: f32 = 0.32;
 const MAX_SPEED: f32 = 1.5;
 
 #[allow(dead_code)]
@@ -143,7 +141,7 @@ impl ReactiveFollowGap {
         }
 
         if min_dist < MIN_RANGE_BUBBLE_TRIGGER {
-            let bubble_radius = ((VEHICLE_WIDTH * 0.7) / min_dist) / angle_increment;
+            let bubble_radius = ((VEHICLE_WIDTH / 2.0) / min_dist) / angle_increment;
             let bubble_size = bubble_radius as usize;
 
             let start_idx = min_idx.saturating_sub(bubble_size);
@@ -193,36 +191,54 @@ impl ReactiveFollowGap {
             return (roi_start + roi_end) / 2;
         }
 
-        let best_center = Self::find_longest_segment_center(&max_points);
+        //let best_center = Self::find_longest_segment_center(&max_points);
+        let best_center = Self::find_weighted_best_point(&max_points, ranges);
         Self::apply_ema_filter(best_center, previous_best)
     }
 
-    fn find_longest_segment_center(points: &[usize]) -> usize {
-        let mut max_start = points[0];
-        let mut max_length = 1;
-        let mut current_start = points[0];
-        let mut current_length = 1;
+    fn find_weighted_best_point(candidates: &[usize], ranges: &[f32]) -> usize {
+        let mut weighted_sum = 0.0;
+        let mut weight_total = 0.0;
 
-        for i in 1..points.len() {
-            if points[i] == points[i - 1] + 1 {
-                current_length += 1;
-            } else {
-                if current_length > max_length {
-                    max_length = current_length;
-                    max_start = current_start;
-                }
-                current_start = points[i];
-                current_length = 1;
-            }
+        for &i in candidates {
+            let weight = ranges[i];
+            weighted_sum += i as f32 * weight;
+            weight_total += weight;
         }
 
-        if current_length > max_length {
-            max_start = current_start;
-            max_length = current_length;
+        if weight_total > 0.0 {
+            (weighted_sum / weight_total).round() as usize
+        } else {
+            candidates[candidates.len() / 2] // fallback
         }
-
-        max_start + max_length / 2
     }
+
+    //fn find_longest_segment_center(points: &[usize]) -> usize {
+    //    let mut max_start = points[0];
+    //    let mut max_length = 1;
+    //    let mut current_start = points[0];
+    //    let mut current_length = 1;
+    //
+    //    for i in 1..points.len() {
+    //        if points[i] == points[i - 1] + 1 {
+    //            current_length += 1;
+    //        } else {
+    //            if current_length > max_length {
+    //                max_length = current_length;
+    //                max_start = current_start;
+    //            }
+    //            current_start = points[i];
+    //            current_length = 1;
+    //        }
+    //    }
+    //
+    //    if current_length > max_length {
+    //        max_start = current_start;
+    //        max_length = current_length;
+    //    }
+    //
+    //    max_start + max_length / 2
+    //}
 
     fn apply_ema_filter(current_best: usize, previous_best: &Arc<Mutex<Option<usize>>>) -> usize {
         let mut prev_lock = previous_best.lock().unwrap();
@@ -236,46 +252,18 @@ impl ReactiveFollowGap {
         filtered_best
     }
 
-    fn pure_pursuit(steer_ang_rad: &f32, lookahead_dist: f32) -> f32 {
-        let x = lookahead_dist * steer_ang_rad.cos();
-        let y = lookahead_dist * steer_ang_rad.sin();
-
-        // 라이다 위치 보정: x좌표에 LIDAR_TO_REAR만큼 더함
-        let x_rear = x + LIDAR_TO_REAR;
-        let ld_rear = (x_rear.powi(2) + y.powi(2)).sqrt();
-
-        // 목표점 각도 alpha = atan2(y, x_rear)
-        let alpha = y.atan2(x_rear);
-
-        (2.0 * WHEEL_BASE * alpha.sin() / ld_rear).atan()
-    }
-
     fn calculate_control(msg: &LaserScan, best_point_idx: usize) -> (f32, f32) {
         let steering_angle = msg.angle_min + msg.angle_increment * best_point_idx as f32;
         let steering_degree = steering_angle.abs() * 180.0 / PI;
 
-        let best_lookahead = msg.ranges[best_point_idx].min(2.0);
-        println!("Best Lookahead distance: {}", best_lookahead);
-
-        let adaptive_lookahead = match steering_angle.abs() {
-            n if n < 5.0 => best_lookahead.clamp(0.5, 1.0),
-            n if n < 15.0 => best_lookahead.clamp(0.5, 0.8),
-            n if n < 30.0 => best_lookahead.clamp(0.3, 0.6),
-            _ => best_lookahead.clamp(0.2, 0.5),
-        };
-
-        let pure_pursuit_steer = Self::pure_pursuit(&steering_angle, adaptive_lookahead);
-
-        let steer_ang_deg = pure_pursuit_steer.abs() * 180.0 / PI;
-
         // Adaptive speed control based on steering
-        let speed = (MAX_SPEED - steer_ang_deg / 45.0).clamp(0.5, MAX_SPEED);
+        let speed = (MAX_SPEED - steering_degree / 45.0).clamp(0.5, MAX_SPEED);
 
         println!(
             "Final Steer (deg): {:.2}\nDriving Speed: {:.2}",
             steering_degree, speed
         );
-        (pure_pursuit_steer, speed)
+        (steering_angle, speed)
     }
 }
 

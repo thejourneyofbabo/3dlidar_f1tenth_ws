@@ -14,6 +14,7 @@ const VEHICLE_WIDTH: f32 = 0.5;
 const ROI_ANGLE_DEG: f32 = 67.0;
 const EMA_ALPHA: f32 = 0.6;
 const SMOOTHING_WINDOW_SIZE: usize = 9;
+const MAX_SPEED: f32 = 4.5;
 
 #[allow(dead_code)]
 pub struct ReactiveFollowGap {
@@ -238,7 +239,7 @@ impl ReactiveFollowGap {
         let steering_degree = steering_angle.abs() * 180.0 / PI;
 
         // Adaptive speed control based on steering
-        let speed = (1.2 - steering_degree / 45.0).clamp(0.5, 1.2);
+        let speed = (MAX_SPEED - steering_degree / 45.0).clamp(0.5, MAX_SPEED);
 
         println!(
             "Final Steer (deg): {:.2}\nDriving Speed: {:.2}",

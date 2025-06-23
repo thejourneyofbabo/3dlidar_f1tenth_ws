@@ -16,3 +16,5 @@
 
 # Ignore target directory in all locations
 **/target/
+
+*.csv

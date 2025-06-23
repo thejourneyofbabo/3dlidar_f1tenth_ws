@@ -4,12 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = { version = "1.0.95", features = ["backtrace"] }
 rclrs = "0.4.1"
-rosidl_runtime_rs = "0.4.1"
-tokio = { version = "1.42.0", features = ["full"] }
+anyhow = "1.0.98"
+tokio = { version = "1.45.1", features = ["full"] }
 
 ## msgs
-sensor_msgs = "*"
-std_msgs = "*"
+sensor_msgs = "4.2.3"
+std_msgs = "4.2.3"
 ackermann_msgs = "*" 

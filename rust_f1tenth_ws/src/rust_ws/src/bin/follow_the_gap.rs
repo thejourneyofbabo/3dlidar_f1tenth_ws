@@ -11,11 +11,14 @@ use std::{
 const MAX_RANGE: f32 = 5.0;
 const MIN_RANGE: f32 = 0.3;
 const VEHICLE_WIDTH: f32 = 0.4;
-const ROI_ANGLE_DEG: f32 = 67.0; // degree
+const ROI_ANGLE_DEG: f32 = 69.0; // degree
 const MIN_GAP_RANGE: f32 = 1.5; // Minimum range to consider a point part of a gap
-const EMA_ALPHA: f32 = 0.6; // Alpha for Exponential Moving Average filter
+const EMA_ALPHA: f32 = 0.99; // Alpha for Exponential Moving Average filter
 const LIDAR_TO_REAR: f32 = 0.27;
 const WHEEL_BASE: f32 = 0.32;
+const MIN_SPEED: f32 = 0.5;
+const MAX_SPEED: f32 = 1.5;
+const MAX_STEERING_RAD: f32 = PI / 4.0;
 
 #[allow(dead_code)]
 struct ReactiveFollowGap {
@@ -145,7 +148,7 @@ impl ReactiveFollowGap {
         let mut weight_total = 0.0;
 
         for i in gap_start..=gap_end {
-            let weight = ranges[i];
+            let weight = ranges[i].powi(2);
             weighted_sum += i as f32 * weight;
             weight_total += weight;
         }
@@ -194,27 +197,36 @@ impl ReactiveFollowGap {
         let steer_ang_deg = steer_ang_rad.abs() * 180.0 / PI;
 
         let adaptive_lookahead = match steer_ang_deg {
-            n if n < 5.0 => best_lookahead * 1.0,
-            n if n < 15.0 => best_lookahead * 0.7,
-            n if n < 30.0 => best_lookahead * 0.5,
-            _ => best_lookahead * 0.3,
+            n if n < 5.0 => best_lookahead * 0.8,
+            n if n < 15.0 => best_lookahead * 0.5,
+            n if n < 30.0 => best_lookahead * 0.3,
+            _ => best_lookahead * 0.2,
         };
 
         let pure_pursuit_steer = Self::pure_pursuit(&steer_ang_rad, adaptive_lookahead);
-        let steer_ang_deg = pure_pursuit_steer.abs() * 180.0 / PI;
+        //let steering_deg = pure_pursuit_steer.abs() * 180.0 / PI;
 
-        // Fast Speed
-        let drive_speed = match steer_ang_deg {
-            n if n < 5.0 => 4.0,
-            n if n < 10.0 => 2.5,
-            n if n < 15.0 => 1.2,
-            _ => 0.8,
-        };
+        let lerp = |a: f32, b: f32, t: f32| a + t * (b - a);
 
-        println!(
-            "Final Steer: {}\nDriving Speed: {}",
-            steer_ang_deg, drive_speed
-        );
+        // Adaptive speed control based on steering
+        //let drive_speed = (MAX_SPEED - steering_deg / 45.0).clamp(0.5, MAX_SPEED);
+        let steering_ratio = (pure_pursuit_steer.abs() / MAX_STEERING_RAD).clamp(0.0, 1.0);
+        let drive_speed = lerp(MAX_SPEED, MIN_SPEED, steering_ratio);
+
+        //println!(
+        //    "Final Steer: {}\nDriving Speed: {}",
+        //    steering_deg, drive_speed
+        //);
+        println!("=== DEBUG ===");
+        //println!("pure_pursuit_steer (rad): {:.6}", pure_pursuit_steer.abs());
+        //println!("MAX_STEERING_RAD: {:.6}", MAX_STEERING_RAD);
+        println!("steering_ratio: {:.6}", steering_ratio.sqrt());
+        println!("final_speed: {}", drive_speed);
+        //println!(
+        //    "lerp({}, {}, {}) = {}",
+        //    MAX_SPEED, MIN_SPEED, steering_ratio, drive_speed
+        //);
+        println!("=============");
 
         (pure_pursuit_steer, drive_speed)
     }

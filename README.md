@@ -1,2 +1,2 @@
-# F1Tenth Basic setup with 3D LiDAR & Rust
-Using Livox Mid-360 3D-LiDAR  
+# F1Tenth Project with Rust Ros2
+Use Rclrs(ros2 rust) to develop F1Tenth(Roboracer) project 

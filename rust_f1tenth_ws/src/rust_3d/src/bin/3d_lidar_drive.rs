@@ -1,5 +1,6 @@
 use ackermann_msgs::msg::AckermannDriveStamped;
 use anyhow::{Error, Result};
+use nalgebra;
 use rclrs::*;
 use sensor_msgs::msg::PointCloud2;
 

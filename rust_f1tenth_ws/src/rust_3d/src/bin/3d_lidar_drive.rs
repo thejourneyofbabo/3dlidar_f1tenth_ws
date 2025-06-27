@@ -5,6 +5,7 @@ use rclrs::*;
 use sensor_msgs::msg::PointCloud2;
 
 /// Represents a 3D LiDAR point with all sensor data
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct LidarPoint {
     x: f32,
@@ -44,6 +45,7 @@ impl LidarPoint {
     }
 }
 
+#[allow(dead_code)]
 struct DriveWith3D {
     scan_subscription: Subscription<PointCloud2>,
     drive_publisher: Publisher<AckermannDriveStamped>,
@@ -60,8 +62,8 @@ impl DriveWith3D {
         // Create original LiDAR subscriber with callback
         let scan_subscription =
             node.create_subscription::<PointCloud2, _>("/livox/lidar", move |msg: PointCloud2| {
-                if let Err(e) = Self::process_and_publish_filtered(msg, &publisher_clone) {
-                    eprintln!("Error during filtering process: {}", e);
+                if let Err(e) = Self::lidar_callback(msg, &publisher_clone) {
+                    eprintln!("Error during scan process: {}", e);
                 }
             })?;
 
@@ -69,6 +71,45 @@ impl DriveWith3D {
             scan_subscription,
             drive_publisher,
         })
+    }
+
+    /// Parse PointCloud2 message into vector of LiDAR points
+    fn parse_pointcloud2(msg: &PointCloud2) -> Vec<LidarPoint> {
+        let mut points = Vec::with_capacity(msg.data.len() / msg.point_step as usize);
+        let point_step = msg.point_step as usize;
+
+        // Process each point in the point cloud
+        for i in (0..msg.data.len()).step_by(point_step) {
+            if let Some(point) = LidarPoint::from_bytes(&msg.data, i) {
+                points.push(point);
+            }
+        }
+
+        points
+    }
+
+    fn lidar_callback(
+        msg: PointCloud2,
+        drive_publisher: &Publisher<AckermannDriveStamped>,
+    ) -> Result<(), Error> {
+        // 1. Parse original 3D points
+        let lidar_points = Self::parse_pointcloud2(&msg);
+        let original_count = lidar_points.len();
+
+        // 2. PointCloud ROI Set
+        let filtered_points: Vec<LidarPoint> = lidar_points
+            .into_iter()
+            .filter(|point| {
+                point.z >= -0.1
+                    && point.z <= 0.0
+                    && point.x >= -1.0
+                    && point.x <= 2.0
+                    && point.y >= -1.5
+                    && point.y <= 1.5
+            }) // PointCloud ROI setup
+            .collect();
+
+        Ok(())
     }
 }
 

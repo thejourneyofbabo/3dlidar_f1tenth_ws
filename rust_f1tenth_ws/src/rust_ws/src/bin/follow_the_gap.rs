@@ -17,7 +17,7 @@ const EMA_ALPHA: f32 = 0.7; // Alpha for Exponential Moving Average filter
 const LIDAR_TO_REAR: f32 = 0.27;
 const WHEEL_BASE: f32 = 0.32;
 const MIN_SPEED: f32 = 0.5;
-const MAX_SPEED: f32 = 4.5;
+const MAX_SPEED: f32 = 3.5;
 const MAX_STEERING_RAD: f32 = PI / 4.0;
 
 #[allow(dead_code)]
@@ -148,7 +148,7 @@ impl ReactiveFollowGap {
         let mut weight_total = 0.0;
 
         for i in gap_start..=gap_end {
-            let weight = ranges[i].powi(2);
+            let weight = ranges[i].powi(1);
             weighted_sum += i as f32 * weight;
             weight_total += weight;
         }

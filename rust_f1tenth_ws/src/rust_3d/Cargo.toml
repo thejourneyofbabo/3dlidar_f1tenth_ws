@@ -8,6 +8,7 @@ rclrs = "0.4.1"
 anyhow = "1.0.98"
 tokio = { version = "1.45.1", features = ["full"] }
 nalgebra = "0.33.2"
+rand = "0.9.1"
 
 ## msgs
 sensor_msgs = "4.2.3"

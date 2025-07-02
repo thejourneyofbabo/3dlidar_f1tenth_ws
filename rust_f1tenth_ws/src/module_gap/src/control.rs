@@ -1,7 +1,8 @@
 // ================================
 // src/control.rs - 제어 관련 모든 기능 (하나의 파일)
 // ================================
-use crate::config::Config;
+//use crate::config::Config;
+use crate::Config;
 
 // Pure Pursuit 제어
 pub struct PurePursuitController {

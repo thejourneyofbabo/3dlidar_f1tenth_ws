@@ -39,7 +39,7 @@ impl ReactiveFollowGap {
 
         let scan_subscription =
             node.create_subscription::<LaserScan, _>("/scan", move |msg: LaserScan| {
-                if let Err(e) = Self::lidar_callback(msg, &publisher_clone, &prev_best_clone) {
+                if let Err(e) = Self::lidar_callback(&msg, &publisher_clone, &prev_best_clone) {
                     eprintln!("Error during scan process: {}", e);
                 }
             })?;
@@ -218,14 +218,14 @@ impl ReactiveFollowGap {
     }
 
     fn lidar_callback(
-        msg: LaserScan,
+        msg: &LaserScan,
         drive_publisher: &Publisher<AckermannDriveStamped>,
         previous_best_point: &Arc<Mutex<Option<usize>>>,
     ) -> Result<(), Error> {
         // Process each LiDAR scan as per the Follow Gap algorithm & publish an AckermannDriveStamped Message
-        let processed_ranges = Self::process_lidar(&msg);
+        let processed_ranges = Self::process_lidar(msg);
 
-        let (max_gap_start, max_gap_end) = Self::find_max_gap(&msg, &processed_ranges);
+        let (max_gap_start, max_gap_end) = Self::find_max_gap(msg, &processed_ranges);
 
         let best_point_idx = Self::find_best_point(
             &processed_ranges,
@@ -234,7 +234,7 @@ impl ReactiveFollowGap {
             previous_best_point,
         );
 
-        let (steering_angle, drive_speed) = Self::vehicle_control(&msg, best_point_idx);
+        let (steering_angle, drive_speed) = Self::vehicle_control(msg, best_point_idx);
 
         let mut drive_msg = AckermannDriveStamped::default();
         drive_msg.drive.steering_angle = steering_angle;

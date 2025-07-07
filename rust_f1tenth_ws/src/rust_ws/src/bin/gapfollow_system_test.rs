@@ -103,7 +103,7 @@ impl ReactiveFollowGap {
                 .keep_last(3),
             move |msg: LaserScan| {
                 if let Err(e) = Self::lidar_callback(
-                    msg,
+                    &msg,
                     &publisher_clone,
                     &prev_best_clone,
                     &perf_stats_clone,
@@ -355,7 +355,7 @@ impl ReactiveFollowGap {
     }
 
     fn lidar_callback(
-        msg: LaserScan,
+        msg: &LaserScan,
         drive_publisher: &Publisher<AckermannDriveStamped>,
         previous_best_point: &Arc<Mutex<Option<usize>>>,
         performance_stats: &Arc<Mutex<RunningStats>>,
@@ -379,12 +379,12 @@ impl ReactiveFollowGap {
         current_metrics.scan_size = msg.ranges.len();
 
         // Process each LiDAR scan as per the Follow Gap algorithm & publish an AckermannDriveStamped Message
-        let (processed_ranges, preprocess_time) = Self::process_lidar(&msg);
+        let (processed_ranges, preprocess_time) = Self::process_lidar(msg);
         current_metrics.preprocess_time_ms = preprocess_time;
 
         // Find max length gap
         let ((max_gap_start, max_gap_end), find_gap_time) =
-            Self::find_max_gap(&msg, &processed_ranges);
+            Self::find_max_gap(msg, &processed_ranges);
         current_metrics.find_gap_time_ms = find_gap_time;
 
         // Find the best point in the gap
@@ -397,7 +397,7 @@ impl ReactiveFollowGap {
         current_metrics.find_best_point_time_ms = find_best_time;
 
         let ((steering_angle, drive_speed), control_time) =
-            Self::vehicle_control(&msg, best_point_idx);
+            Self::vehicle_control(msg, best_point_idx);
         current_metrics.control_time_ms = control_time;
 
         let mut drive_msg = AckermannDriveStamped::default();

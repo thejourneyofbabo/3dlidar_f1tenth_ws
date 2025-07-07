@@ -1,0 +1,29 @@
+# config/vehicle_param.yaml
+follow_the_gap_node:
+  ros__parameters:
+    # LiDAR 처리 파라미터 (f64 타입)
+    max_range: 6.0
+    min_range: 0.3
+    min_gap_range: 1.5
+    
+    # 차량 물리 파라미터 (f64 타입)
+    vehicle_width: 0.4
+    lidar_to_rear: 0.27
+    wheel_base: 0.32
+    
+    # 제어 파라미터 (f64 타입)
+    min_speed: 0.5
+    max_speed: 3.5
+    max_steering_rad: 0.7854  # PI/4 (45도)
+    
+    # 알고리즘 파라미터 (f64 타입)
+    roi_angle_deg: 69.0
+    ema_alpha: 0.7
+    
+    # 토픽 이름 (문자열)
+    scan_topic: "/scan"
+    drive_topic: "/drive"
+    
+    # 디버그 옵션 (bool)
+    debug_mode: true
+    publish_debug_info: true

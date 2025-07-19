@@ -82,7 +82,7 @@ impl ParameterManager {
         let config_path = self.config_path.clone();
         let mut last_modified = fs::metadata(&config_path)
             .and_then(|m| m.modified())
-            .unwrap_or_else(|_| std::time::SystemTime::UNIX_EPOCH);
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
 
         thread::spawn(move || {
             loop {
@@ -113,6 +113,7 @@ impl ParameterManager {
 }
 
 /// Reactive Follow-the-Gap algorithm implementation
+#[allow(dead_code)]
 struct ReactiveFollowGap {
     scan_subscription: Subscription<LaserScan>,
     drive_publisher: Publisher<AckermannDriveStamped>,

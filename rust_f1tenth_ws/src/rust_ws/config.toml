@@ -1,0 +1,9 @@
+# 앱 설정
+app_name = "MyApp"
+port = 3080
+debug = true
+
+# 데이터베이스
+db_host = "localhost"
+db_port = 5432
+max_connections = 10

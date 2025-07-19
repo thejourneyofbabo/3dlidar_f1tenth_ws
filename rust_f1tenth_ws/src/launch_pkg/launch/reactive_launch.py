@@ -17,10 +17,17 @@ def generate_launch_description():
             env=env_vars
             # env={'CONFIG_PATH': config_path}
         ),
+        # Node(
+        #     package='toml_param',
+        #     executable='toml_reactive', 
+        #     name='toml_reactive_node',
+        #     output='screen',
+        #     env=env_vars
+        # ),
         Node(
             package='toml_param',
-            executable='toml_reactive', 
-            name='toml_reactive_node',
+            executable='hybrid_reactive', 
+            name='hybrid_reactive',
             output='screen',
             env=env_vars
         ),

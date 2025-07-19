@@ -6,7 +6,7 @@ def generate_launch_description():
     env_vars = os.environ.copy()
     env_vars['CONFIG1_PATH'] = './src/rust_ws/config.toml'
     # env_vars['CONFIG_PATH'] = './src/toml_param/vehicle_param.toml'
-    env_vars['CONFIG_PATH'] = './src/follow_the_gap_param/vehicle_param.toml'
+    env_vars['CONFIG_PATH'] = './src/follow_the_gap_param/src/vehicle_setup/vehicle_param.toml'
     # config_path = './src/rust_ws/config.toml'
     
     return LaunchDescription([

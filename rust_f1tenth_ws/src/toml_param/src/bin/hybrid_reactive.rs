@@ -11,9 +11,10 @@ use std::{
     fs,
     sync::{Arc, Mutex},
     thread,
-    time::{Duration, SystemTime},
+    time::Duration,
 };
 
+/// Vehicle configuration parameters loaded from TOML file
 #[derive(Deserialize, Debug, Clone)]
 pub struct VehicleParams {
     // LiDAR processing parameters
@@ -40,6 +41,7 @@ pub struct VehicleParams {
 }
 
 impl VehicleParams {
+    /// Load parameters from TOML configuration file
     fn load() -> Result<Self, Box<dyn std::error::Error>> {
         let config_path =
             env::var("CONFIG_PATH").unwrap_or_else(|_| "./vehicle_param.toml".to_string());
@@ -48,98 +50,69 @@ impl VehicleParams {
     }
 }
 
+/// Simplified parameter manager with hot-reload capability
 struct ParameterManager {
     params: Arc<Mutex<VehicleParams>>,
     config_path: String,
-    last_modified: Arc<Mutex<SystemTime>>,
 }
 
 impl ParameterManager {
+    /// Create new parameter manager and load initial configuration
     fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let config_path =
             env::var("CONFIG_PATH").unwrap_or_else(|_| "./vehicle_param.toml".to_string());
         let params = Arc::new(Mutex::new(VehicleParams::load()?));
-
-        let metadata = fs::metadata(&config_path)?;
-        let last_modified = Arc::new(Mutex::new(metadata.modified()?));
 
         println!("Parameter manager initialized with config: {}", config_path);
 
         Ok(Self {
             params,
             config_path,
-            last_modified,
         })
     }
 
-    fn check_and_reload(&self) -> Result<bool, Box<dyn std::error::Error>> {
-        let metadata = fs::metadata(&self.config_path)?;
-        let modified = metadata.modified()?;
-
-        let mut last_modified_guard = self.last_modified.lock().unwrap();
-
-        if modified > *last_modified_guard {
-            match VehicleParams::load() {
-                Ok(new_params) => {
-                    let mut params_guard = self.params.lock().unwrap();
-                    *params_guard = new_params;
-                    *last_modified_guard = modified;
-                    drop(params_guard);
-                    drop(last_modified_guard);
-                    println!("Parameters reloaded from file!");
-                    return Ok(true);
-                }
-                Err(e) => {
-                    eprintln!("Failed to parse config file: {}", e);
-                    return Err(e);
-                }
-            }
-        }
-        Ok(false)
-    }
-
+    /// Get thread-safe reference to parameters
     fn get_params(&self) -> Arc<Mutex<VehicleParams>> {
         self.params.clone()
     }
 
+    /// Start background file watcher thread for hot-reload functionality
     fn start_file_watcher(&self) {
         let params = self.params.clone();
         let config_path = self.config_path.clone();
-        let last_modified = self.last_modified.clone();
+        let mut last_modified = fs::metadata(&config_path)
+            .and_then(|m| m.modified())
+            .unwrap_or_else(|_| std::time::SystemTime::UNIX_EPOCH);
 
         thread::spawn(move || {
             loop {
                 thread::sleep(Duration::from_millis(500)); // Check every 500ms
 
-                if let Ok(metadata) = fs::metadata(&config_path) {
-                    if let Ok(modified) = metadata.modified() {
-                        let mut last_modified_guard = last_modified.lock().unwrap();
-
-                        if modified > *last_modified_guard {
-                            match VehicleParams::load() {
-                                Ok(new_params) => {
-                                    let mut params_guard = params.lock().unwrap();
-                                    *params_guard = new_params;
-                                    *last_modified_guard = modified;
-                                    drop(params_guard);
-                                    drop(last_modified_guard);
-                                    println!("Parameters hot-reloaded!");
-                                }
-                                Err(e) => {
-                                    eprintln!("Hot-reload failed: {}", e);
-                                }
-                            }
+                // Chain-based file change detection and parameter reload
+                let reload_result = fs::metadata(&config_path)
+                    .and_then(|metadata| metadata.modified())
+                    .map(|modified| {
+                        if modified > last_modified {
+                            VehicleParams::load()
+                                .map(|new_params| {
+                                    if let Ok(mut guard) = params.lock() {
+                                        *guard = new_params;
+                                        last_modified = modified;
+                                        println!("Parameters hot-reloaded!");
+                                    }
+                                })
+                                .unwrap_or_else(|e| eprintln!("Hot-reload failed: {}", e));
                         }
-                    }
-                } else {
-                    eprintln!("Config file not found: {}", config_path);
-                }
+                    });
+
+                // Ignore errors (file not found, etc. are normal during startup)
+                let _ = reload_result;
             }
         });
     }
 }
 
-#[allow(dead_code)]
+/// Reactive Follow-the-Gap algorithm implementation
 struct ReactiveFollowGap {
     scan_subscription: Subscription<LaserScan>,
     drive_publisher: Publisher<AckermannDriveStamped>,
@@ -148,31 +121,36 @@ struct ReactiveFollowGap {
 }
 
 impl ReactiveFollowGap {
+    /// Create new ReactiveFollowGap node with given parameters
     fn new(executor: &Executor, params: Arc<Mutex<VehicleParams>>) -> Result<Self, RclrsError> {
         let node = executor.create_node("follow_the_gap_node")?;
 
+        // Display initial parameters if debug mode is enabled
         let params_lock = params.lock().unwrap();
         if params_lock.debug_mode {
             println!("=== Initial Parameters ===");
             println!("{:#?}", *params_lock);
         }
 
+        // Create publishers and subscribers
         let drive_publisher =
             node.create_publisher::<AckermannDriveStamped>(&params_lock.drive_topic)?;
         let scan_topic = params_lock.scan_topic.clone();
         drop(params_lock);
 
+        // Setup callback data sharing
         let publisher_clone = drive_publisher.clone();
         let previous_best_point = Arc::new(Mutex::new(None));
         let prev_best_clone = previous_best_point.clone();
         let params_clone = params.clone();
 
+        // Create LiDAR subscription with callback
         let scan_subscription =
             node.create_subscription::<LaserScan, _>(&scan_topic, move |msg: LaserScan| {
                 if let Err(e) =
                     Self::lidar_callback(&msg, &publisher_clone, &prev_best_clone, &params_clone)
                 {
-                    eprintln!("Error during scan process: {}", e);
+                    eprintln!("Error during scan processing: {}", e);
                 }
             })?;
 
@@ -184,11 +162,13 @@ impl ReactiveFollowGap {
         })
     }
 
+    /// Process LiDAR data: filter invalid ranges and create safety bubble
     fn process_lidar(msg: &LaserScan, params: &VehicleParams) -> Vec<f32> {
         let mut ranges = msg.ranges.clone();
         let mut min_dist = params.max_range as f32;
         let mut min_idx = 0;
 
+        // Filter invalid ranges and find closest obstacle
         for (i, range) in ranges.iter_mut().enumerate() {
             if *range > params.max_range as f32 || range.is_nan() || range.is_infinite() {
                 *range = params.max_range as f32;
@@ -198,6 +178,7 @@ impl ReactiveFollowGap {
             }
         }
 
+        // Create safety bubble around closest obstacle
         if min_dist < params.min_range as f32 {
             let bubble_radius =
                 ((params.vehicle_width as f32 / 2.0) / min_dist) / msg.angle_increment;
@@ -206,6 +187,7 @@ impl ReactiveFollowGap {
             let start_idx = min_idx.saturating_sub(bubble_size);
             let end_idx = std::cmp::min(min_idx + bubble_size, ranges.len() - 1);
 
+            // Zero out ranges within safety bubble
             for i in start_idx..=end_idx {
                 ranges[i] = 0.0
             }
@@ -214,26 +196,32 @@ impl ReactiveFollowGap {
         ranges
     }
 
+    /// Find the largest gap within the region of interest (ROI)
     fn find_max_gap(msg: &LaserScan, ranges: &[f32], params: &VehicleParams) -> (usize, usize) {
+        // Calculate ROI boundaries
         let roi_angle_rad = (params.roi_angle_deg as f32) * (PI as f32) / 180.0;
         let roi_angle_steps = (roi_angle_rad / msg.angle_increment) as usize;
         let mid_lidar_idx = ranges.len() / 2;
         let roi_idx_start = mid_lidar_idx.saturating_sub(roi_angle_steps);
         let roi_idx_end = (mid_lidar_idx + roi_angle_steps).min(ranges.len() - 1);
 
+        // Gap detection variables
         let mut max_gap_size = 0;
         let mut max_gap_start = roi_idx_start;
         let mut max_gap_end = roi_idx_start;
         let mut gap_start = roi_idx_start;
         let mut in_gap = false;
 
+        // Scan through ROI to find gaps
         for i in roi_idx_start..=roi_idx_end {
             let is_free = ranges[i] > params.min_gap_range as f32;
 
             if is_free && !in_gap {
+                // Start of new gap
                 gap_start = i;
                 in_gap = true;
             } else if !is_free && in_gap {
+                // End of current gap
                 let gap_size = i - gap_start;
                 if gap_size > max_gap_size {
                     max_gap_size = gap_size;
@@ -244,6 +232,7 @@ impl ReactiveFollowGap {
             }
         }
 
+        // Handle gap extending to end of ROI
         if in_gap {
             let gap_size = roi_idx_end - gap_start + 1;
             if gap_size > max_gap_size {
@@ -253,9 +242,10 @@ impl ReactiveFollowGap {
             }
         }
 
+        // Fallback if no gap found
         if max_gap_size == 0 {
             if params.debug_mode {
-                println!("Warning!: No gap found!!");
+                println!("Warning: No gap found!");
             }
             max_gap_start = (roi_idx_start + roi_idx_end) / 2;
             max_gap_end = max_gap_start;
@@ -264,6 +254,7 @@ impl ReactiveFollowGap {
         (max_gap_start, max_gap_end)
     }
 
+    /// Find the best target point within the gap using weighted average and EMA filtering
     fn find_best_point(
         ranges: &[f32],
         gap_start: usize,
@@ -274,6 +265,7 @@ impl ReactiveFollowGap {
         let mut weighted_sum = 0.0;
         let mut weight_total = 0.0;
 
+        // Calculate weighted center of gap (farther points have higher weight)
         for i in gap_start..=gap_end {
             let weight = ranges[i].powi(1);
             weighted_sum += i as f32 * weight;
@@ -286,7 +278,7 @@ impl ReactiveFollowGap {
             (gap_start + gap_end) / 2
         };
 
-        // EMA Filter
+        // Apply Exponential Moving Average (EMA) filter for smooth steering
         let ema_best = {
             let mut prev_lock = previous_best.lock().unwrap();
             let ema_result = match *prev_lock {
@@ -307,6 +299,7 @@ impl ReactiveFollowGap {
         ema_best
     }
 
+    /// Pure pursuit algorithm for calculating steering angle
     fn pure_pursuit(steer_ang_rad: &f32, lookahead_dist: f32, params: &VehicleParams) -> f32 {
         let bestpoint_x = lookahead_dist * f32::cos(*steer_ang_rad);
         let bestpoint_y = lookahead_dist * f32::sin(*steer_ang_rad);
@@ -321,6 +314,7 @@ impl ReactiveFollowGap {
         )
     }
 
+    /// Calculate steering angle and speed based on best target point
     fn vehicle_control(msg: &LaserScan, best_point: usize, params: &VehicleParams) -> (f32, f32) {
         let vehicle_center_idx = msg.ranges.len() / 2;
         let steer_ang_rad: f32 =
@@ -329,14 +323,17 @@ impl ReactiveFollowGap {
         let best_lookahead = msg.ranges[best_point].min(3.0);
         let lerp = |a: f32, b: f32, t: f32| a + t * (b - a);
 
+        // Calculate adaptive lookahead distance
         let steering_ratio =
             (steer_ang_rad.abs() / (params.max_steering_rad as f32)).clamp(0.0, 1.0);
         let adaptive_lookahead = lerp(best_lookahead, best_lookahead * 0.05, steering_ratio.sqrt());
 
+        // Apply pure pursuit for final steering calculation
         let pure_pursuit_steer = Self::pure_pursuit(&steer_ang_rad, adaptive_lookahead, params);
         let steering_ratio =
             (pure_pursuit_steer.abs() / (params.max_steering_rad as f32)).clamp(0.0, 1.0);
 
+        // Speed control: slower for sharper turns
         let drive_speed = lerp(
             params.max_speed as f32,
             params.min_speed as f32,
@@ -345,7 +342,7 @@ impl ReactiveFollowGap {
 
         if params.publish_debug_info {
             println!(
-                "adaptive_lookahead: {}, steering_ratio: {:.6}, final_speed: {}, max_speed: {}",
+                "adaptive_lookahead: {:.3}, steering_ratio: {:.6}, speed: {:.3}, max_speed: {:.3}",
                 adaptive_lookahead,
                 steering_ratio.sqrt(),
                 drive_speed,
@@ -356,16 +353,17 @@ impl ReactiveFollowGap {
         (pure_pursuit_steer, drive_speed)
     }
 
+    /// Main LiDAR callback function - processes scan and publishes drive commands
     fn lidar_callback(
         msg: &LaserScan,
         drive_publisher: &Publisher<AckermannDriveStamped>,
         previous_best_point: &Arc<Mutex<Option<usize>>>,
         params: &Arc<Mutex<VehicleParams>>,
     ) -> Result<(), Error> {
-        let params_guard = params.lock().unwrap();
-        let current_params = params_guard.clone();
-        drop(params_guard);
+        // Get current parameters (hot-reload safe)
+        let current_params = params.lock().unwrap().clone();
 
+        // Execute Follow-the-Gap algorithm pipeline
         let processed_ranges = Self::process_lidar(msg, &current_params);
         let (max_gap_start, max_gap_end) =
             Self::find_max_gap(msg, &processed_ranges, &current_params);
@@ -380,6 +378,7 @@ impl ReactiveFollowGap {
         let (steering_angle, drive_speed) =
             Self::vehicle_control(msg, best_point_idx, &current_params);
 
+        // Publish drive command
         let mut drive_msg = AckermannDriveStamped::default();
         drive_msg.drive.steering_angle = steering_angle;
         drive_msg.drive.speed = drive_speed;
@@ -393,13 +392,11 @@ impl ReactiveFollowGap {
 fn main() -> Result<(), RclrsError> {
     println!("F1Tenth Gap Follow Node (Hybrid TOML + Hot Reload)");
 
-    // Initialize parameter manager
-    let param_manager = ParameterManager::new().expect("Failed to load TOML config");
-
-    // Start file watcher thread
+    // Initialize parameter manager with hot-reload capability
+    let param_manager = ParameterManager::new().expect("Failed to load TOML configuration");
     param_manager.start_file_watcher();
 
-    // Initialize ROS2 node
+    // Initialize ROS2 node and executor
     let mut executor = Context::default_from_env()?.create_basic_executor();
     let _node = ReactiveFollowGap::new(&executor, param_manager.get_params())?;
 
@@ -409,5 +406,6 @@ fn main() -> Result<(), RclrsError> {
         env::var("CONFIG_PATH").unwrap_or_else(|_| "./vehicle_param.toml".to_string())
     );
 
+    // Start main execution loop
     executor.spin(SpinOptions::default()).first_error()
 }

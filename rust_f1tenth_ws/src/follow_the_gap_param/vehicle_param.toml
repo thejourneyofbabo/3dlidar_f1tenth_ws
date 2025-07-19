@@ -1,0 +1,26 @@
+# LiDAR 처리 파라미터
+max_range = 5.0
+min_range = 0.3
+min_gap_range = 1.5
+
+# 차량 물리 파라미터
+vehicle_width = 0.4
+lidar_to_rear = 0.27
+wheel_base = 0.32
+
+# 제어 파라미터
+min_speed = 0.5
+max_speed = 2.5
+max_steering_rad = 0.7854
+
+# 알고리즘 파라미터
+roi_angle_deg = 69.0
+ema_alpha = 0.7
+
+# 토픽 이름
+scan_topic = "/scan"
+drive_topic = "/drive"
+
+# 디버그 옵션
+debug_mode = true
+publish_debug_info = true

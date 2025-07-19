@@ -1,0 +1,18 @@
+[package]
+name = "follow_the_gap_param"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rclrs = "0.4.1"
+tokio = { version = "1.45.1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"]}
+toml = "0.9"
+
+# Msgs
+ackermann_msgs = "*"
+sensor_msgs = "4.2.3"
+std_msgs = "4.2.3"
+visualization_msgs = "4.2.3"
+anyhow = "1.0"
+ctrlc = "3.4"
